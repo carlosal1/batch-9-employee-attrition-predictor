@@ -1,0 +1,3 @@
+[Serialized PyTorch/Scikit-Learn GradientBoostingClassifier Model File Binary Placeholder]
+This file contains the binary serialized weights for the 30-feature Gradient Boosting Attrition Classification model trained by Dr Harry Patria.
+In a full production deploy, Python services (Flask/FastAPI) or ONNX runtime would read this file to execute inferences on scikit-learn pipeline objects.
