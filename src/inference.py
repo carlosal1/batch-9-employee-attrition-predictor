@@ -40,7 +40,7 @@ def main():
             
         # Normalize OverTime
         ot_val = input_data.get('overTime', 0)
-        ot_str = "Yes" if (ot_val == 1 or ot_val is True or str(ot_val).lower() == 'yes') else "No"
+        ot_num = 1 if (ot_val == 1 or ot_val is True or str(ot_val).lower() == 'yes') else 0
         
         # Map values
         mapped_data = {
@@ -73,7 +73,7 @@ def main():
             "Gender": input_data.get('gender', 'Male'),
             "JobRole": input_data.get('jobRole', 'Sales Executive'),
             "MaritalStatus": input_data.get('maritalStatus', 'Single'),
-            "OverTime": ot_str
+            "OverTime": ot_num
         }
         
         # Put into DataFrame with correct column ordering
