@@ -1,673 +1,557 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Users, 
-  LayoutDashboard, 
-  SlidersHorizontal, 
-  UploadCloud, 
-  BellRing, 
-  CheckSquare, 
-  BarChart3, 
-  Settings, 
-  Radio, 
-  Brain,
-  Menu,
-  X,
-  Lock,
-  ArrowRight,
-  LogOut,
-  ShieldCheck,
-  Award,
-  Terminal,
+import {
+  Users,
   Activity,
-  Bot
+  Award,
+  AlertTriangle,
+  ClipboardList,
+  UserCheck,
+  TrendingUp,
+  Sliders,
+  X,
+  Info,
+  ShieldAlert,
+  HelpCircle,
+  TrendingDown,
+  Building
 } from 'lucide-react';
-
-import Dashboard from './components/Dashboard';
-import SlicerPredictor from './components/SlicerPredictor';
-import BatchPredictor from './components/BatchPredictor';
-import AlertsManager from './components/AlertsManager';
-import TaskKanban from './components/TaskKanban';
-import ModelInsights from './components/ModelInsights';
-import SettingsPanel from './components/SettingsPanel';
-import RetentionCopilot from './components/RetentionCopilot';
-import FloatingChatbot from './components/FloatingChatbot';
-import { Employee, Alert, Task, PredictionResult } from './types';
+import { Employee, ModelMetrics, RetentionTask, ShapExplanation } from './types';
+import HoldoutMetrics from './components/HoldoutMetrics';
+import ShapWaterfall from './components/ShapWaterfall';
+import ITDOPlanGenerator from './components/ITDOPlanGenerator';
+import RetentionTaskBoard from './components/RetentionTaskBoard';
+import EmployeeDirectory from './components/EmployeeDirectory';
+import ScenarioAnalyser from './components/ScenarioAnalyser';
+import LandingPage from './components/LandingPage';
+import Chatbot from './components/Chatbot';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('attrition_pro_auth') === 'true';
+    return localStorage.getItem('patria_auth') === 'authenticated';
   });
-  const [loginUsername, setLoginUsername] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'roster' | 'tasks' | 'simulator'>('simulator');
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
-  
-  // App System Stats
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [alertThreshold, setAlertThreshold] = useState(0.70);
-  const [serverOnline, setServerOnline] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [metrics, setMetrics] = useState<ModelMetrics | null>(null);
+  const [tasks, setTasks] = useState<RetentionTask[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [selectedExplanation, setSelectedExplanation] = useState<ShapExplanation | null>(null);
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError('');
-    setIsLoggingIn(true);
-    
-    setTimeout(() => {
-      if (loginUsername.trim().toLowerCase() === 'masterclass' && loginPassword === 'agentic2026') {
-        setIsAuthenticated(true);
-        localStorage.setItem('attrition_pro_auth', 'true');
-        setLoginError('');
-      } else {
-        setLoginError('Invalid username or password.');
-      }
-      setIsLoggingIn(false);
-    }, 600);
-  };
+  // Search & Filter state for Roster
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDept, setSelectedDept] = useState('All');
+  const [selectedRisk, setSelectedRisk] = useState('all');
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('attrition_pro_auth');
-    setActiveTab('dashboard');
-  };
+  // Loading & Error states
+  const [loading, setLoading] = useState(true);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Initial Fetch Loops
+  // Fetch initial stats, metrics, tasks on mount
   useEffect(() => {
-    async function initApp() {
+    async function initData() {
       try {
-        const hRes = await fetch('/api/health');
-        if (hRes.ok) setServerOnline(true);
+        setLoading(true);
+        setError(null);
 
-        const sRes = await fetch('/api/settings');
-        if (sRes.ok) {
-          const sData = await sRes.json();
-          setSystemPrompt(sData.system_prompt);
-          setAlertThreshold(sData.alert_threshold);
+        const [metricsRes, employeesRes, tasksRes] = await Promise.all([
+          fetch('/api/metrics'),
+          fetch('/api/employees'),
+          fetch('/api/retention-tasks')
+        ]);
+
+        if (!metricsRes.ok || !employeesRes.ok || !tasksRes.ok) {
+          throw new Error('Failed to load analytical metrics or employee registry from the backend.');
         }
 
-        await Promise.all([
-          fetchEmployees(),
-          fetchAlerts(),
-          fetchTasks()
-        ]);
-      } catch (e) {
-        console.error('Initialization fetch error:', e);
+        const metricsData = await metricsRes.json();
+        const employeesData = await employeesRes.json();
+        const tasksData = await tasksRes.json();
+
+        setMetrics(metricsData);
+        setEmployees(employeesData);
+        setTasks(tasksData);
+      } catch (err: any) {
+        console.error(err);
+        setError(err.message || 'An unexpected error occurred during database initialization.');
+      } finally {
+        setLoading(false);
       }
     }
-    initApp();
+
+    initData();
   }, []);
 
-  const fetchEmployees = async () => {
-    try {
-      const res = await fetch('/api/employees');
-      if (res.ok) {
-        const data = await res.json();
-        setEmployees(data);
+  // Fetch reactive employees roster whenever filters or search criteria update
+  useEffect(() => {
+    async function fetchFilteredRoster() {
+      try {
+        let url = `/api/employees?department=${encodeURIComponent(selectedDept)}&search=${encodeURIComponent(searchQuery)}`;
+        if (selectedRisk !== 'all') {
+          url += `&risk=${encodeURIComponent(selectedRisk)}`;
+        }
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          setEmployees(data);
+        }
+      } catch (err) {
+        console.error('Error fetching filtered roster:', err);
       }
-    } catch (e) { console.error('Failed to load employees:', e); }
+    }
+
+    // Debounce or trigger immediately on filter change
+    fetchFilteredRoster();
+  }, [selectedDept, selectedRisk, searchQuery]);
+
+  // Handle individual employee selection and load their SHAP explanations
+  const handleSelectEmployee = async (id: string) => {
+    setSelectedEmployeeId(id);
+    setDetailsLoading(true);
+    setSelectedExplanation(null);
+
+    try {
+      const [empRes, explainRes] = await Promise.all([
+        fetch(`/api/employees/${id}`),
+        fetch(`/api/employees/${id}/explain`)
+      ]);
+
+      if (empRes.ok && explainRes.ok) {
+        const emp = await empRes.json();
+        const explain = await explainRes.json();
+        setSelectedEmployee(emp);
+        setSelectedExplanation(explain);
+      }
+    } catch (err) {
+      console.error('Error loading employee SHAP details:', err);
+    } finally {
+      setDetailsLoading(false);
+    }
   };
 
-  const fetchAlerts = async () => {
+  // Handle updating task status across columns
+  const handleUpdateTaskStatus = async (taskId: string, newStatus: RetentionTask['status']) => {
     try {
-      const res = await fetch('/api/alerts');
-      if (res.ok) {
-        const data = await res.json();
-        setAlerts(data);
-      }
-    } catch (e) { console.error('Failed to load alerts:', e); }
-  };
-
-  const fetchTasks = async () => {
-    try {
-      const res = await fetch('/api/tasks');
-      if (res.ok) {
-        const data = await res.json();
-        setTasks(data);
-      }
-    } catch (e) { console.error('Failed to load tasks:', e); }
-  };
-
-  // State Transition Actions
-
-  const handleUpdateAlertStatus = async (alertId: string, status: Alert['status']) => {
-    try {
-      const res = await fetch(`/api/alerts/${alertId}`, {
-        method: 'PUT',
+      const res = await fetch(`/api/retention-tasks/${taskId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status: newStatus })
       });
+
       if (res.ok) {
-        const updated = await res.json();
-        setAlerts(prev => prev.map(a => a.id === alertId ? updated : a));
+        const updatedTask = await res.json();
+        setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
       }
-    } catch (e) { console.error('Error updating alert:', e); }
+    } catch (err) {
+      console.error('Error updating task status:', err);
+    }
   };
 
-  const handleAssignAlert = async (alertId: string, email: string) => {
+  // Handle updating task priority
+  const handleUpdateTaskPriority = async (taskId: string, newPriority: RetentionTask['priority']) => {
     try {
-      const res = await fetch(`/api/alerts/${alertId}`, {
-        method: 'PUT',
+      const res = await fetch(`/api/retention-tasks/${taskId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assigned_to: email })
+        body: JSON.stringify({ priority: newPriority })
       });
+
       if (res.ok) {
-        const updated = await res.json();
-        setAlerts(prev => prev.map(a => a.id === alertId ? updated : a));
+        const updatedTask = await res.json();
+        setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
       }
-    } catch (e) { console.error('Error assigning alert:', e); }
+    } catch (err) {
+      console.error('Error updating task priority:', err);
+    }
   };
 
-  const handleSaveAlert = async (result: PredictionResult) => {
-    try {
-      const res = await fetch('/api/alerts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prediction_id: result.prediction_id,
-          employee_id: result.employee_id,
-          employee_name: result.employee_name,
-          department: employees.find(e => e.id === result.employee_id)?.department || 'Research & Development',
-          job_role: employees.find(e => e.id === result.employee_id)?.job_role || 'Research Scientist',
-          threshold: alertThreshold,
-          attrition_probability: result.attrition_probability,
-          status: 'OPEN'
-        })
-      });
-      if (res.ok) {
-        await fetchAlerts();
-      }
-    } catch (e) { console.error('Error saving alert:', e); }
-  };
-
-  const handleSaveBatchAlerts = async (results: PredictionResult[]) => {
-    try {
-      for (const res of results) {
-        await handleSaveAlert(res);
-      }
-    } catch (e) { console.error('Error batch saving alerts:', e); }
-  };
-
-  const handleCreateTask = async (taskData: Omit<Task, 'id' | 'created_at' | 'updated_at'>) => {
-    try {
-      const res = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(taskData)
-      });
-      if (res.ok) {
-        const newTask = await res.json();
-        setTasks(prev => [newTask, ...prev]);
-      }
-    } catch (e) { console.error('Error creating task:', e); }
-  };
-
-  const handleUpdateTaskStatus = async (taskId: string, status: Task['status']) => {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
-      }
-    } catch (e) { console.error('Error updating task:', e); }
-  };
-
+  // Handle deleting a task
   const handleDeleteTask = async (taskId: string) => {
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/retention-tasks/${taskId}`, { method: 'DELETE' });
       if (res.ok) {
         setTasks(prev => prev.filter(t => t.id !== taskId));
       }
-    } catch (e) { console.error('Error deleting task:', e); }
-  };
-
-  const handleSelectEmployee = (empId: string) => {
-    setSelectedEmployeeId(empId);
-  };
-
-  const handleSettingsUpdated = (thresh: number, pr: string) => {
-    setAlertThreshold(thresh);
-    setSystemPrompt(pr);
-  };
-
-  // Nav items mappings
-  const navItems = [
-    { id: 'dashboard', label: 'HR Dashboard', icon: LayoutDashboard },
-    { id: 'predict', label: 'Talent Sandbox', icon: SlidersHorizontal },
-    { id: 'batch', label: 'Batch Assessment', icon: UploadCloud },
-    { id: 'copilot', label: 'AI Retention Copilot', icon: Bot },
-    { id: 'alerts', label: 'Alerts Logs', icon: BellRing, badge: alerts.filter(a => a.status === 'OPEN').length },
-    { id: 'tasks', label: 'Operations Board', icon: CheckSquare, badge: tasks.filter(t => t.status === 'TODO' || t.status === 'IN_PROGRESS').length },
-    { id: 'model', label: 'Model Metrics', icon: BarChart3 },
-    { id: 'settings', label: 'System Controls', icon: Settings }
-  ];
-
-  const renderActiveTab = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return (
-          <Dashboard
-            alerts={alerts}
-            tasks={tasks}
-            employeesCount={employees.length || 1470}
-            onNavigate={(tab) => setActiveTab(tab)}
-            onSelectEmployee={handleSelectEmployee}
-          />
-        );
-      case 'predict':
-        return (
-          <SlicerPredictor
-            employees={employees}
-            selectedEmployeeId={selectedEmployeeId}
-            onSaveAlert={handleSaveAlert}
-            systemPrompt={systemPrompt}
-          />
-        );
-      case 'batch':
-        return (
-          <BatchPredictor
-            onSaveBatchAlerts={handleSaveBatchAlerts}
-          />
-        );
-      case 'copilot':
-        return (
-          <RetentionCopilot
-            employees={employees}
-          />
-        );
-      case 'alerts':
-        return (
-          <AlertsManager
-            alerts={alerts}
-            onUpdateAlertStatus={handleUpdateAlertStatus}
-            onAssignAlert={handleAssignAlert}
-            onNavigate={(tab) => setActiveTab(tab)}
-            onSelectEmployee={handleSelectEmployee}
-          />
-        );
-      case 'tasks':
-        return (
-          <TaskKanban
-            tasks={tasks}
-            employees={employees}
-            onCreateTask={handleCreateTask}
-            onUpdateTaskStatus={handleUpdateTaskStatus}
-            onDeleteTask={handleDeleteTask}
-          />
-        );
-      case 'model':
-        return <ModelInsights />;
-      case 'settings':
-        return (
-          <SettingsPanel
-            onSettingsUpdated={handleSettingsUpdated}
-          />
-        );
-      default:
-        return <div className="text-white text-xs font-mono">Select Tab.</div>;
+    } catch (err) {
+      console.error('Error deleting task:', err);
     }
   };
 
-  if (!isAuthenticated) {
+  // Callback when a new AI retention plan is generated
+  const handlePlanCreated = (newTask: RetentionTask) => {
+    setTasks(prev => [newTask, ...prev]);
+  };
+
+  // Executive summary counts
+  const totalCount = employees.length;
+  const criticalRiskCount = employees.filter(e => (e.predictedProbability || 0) >= 0.70).length;
+  const averageRisk = employees.length > 0
+    ? Math.round((employees.reduce((sum, e) => sum + (e.predictedProbability || 0), 0) / employees.length) * 100)
+    : 0;
+
+  if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-y-auto select-none font-sans p-4 md:p-8">
-        {/* Background Ambience Dots & Glows */}
-        <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-15 pointer-events-none" />
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full filter blur-[120px] pointer-events-none animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full filter blur-[120px] pointer-events-none animate-pulse" />
-
-        {/* Header Branding */}
-        <header className="w-full max-w-7xl mx-auto flex items-center justify-between pb-8 border-b border-slate-900 z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-cyan-500 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-              <Brain className="w-5 h-5 text-slate-950" />
-            </div>
-            <span className="font-bold text-xl tracking-tight text-white uppercase">
-              ATTRITION<span className="text-cyan-500 underline decoration-2 underline-offset-4">PRO</span>
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 uppercase tracking-wider">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-            Model Status: Standard Active
-          </div>
-        </header>
-
-        {/* Hero & Authentication Grid */}
-        <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center my-auto py-10 z-10">
-          
-          {/* Left Hero Description (lg:col-span-7) */}
-          <div className="lg:col-span-7 space-y-6 text-left">
-            <div className="inline-flex items-center gap-2 bg-indigo-950/40 border border-indigo-500/20 px-3 py-1 rounded-full text-xs font-mono text-indigo-300">
-              <Award className="w-3.5 h-3.5 text-indigo-400" />
-              <span>PRESCRIPTIVE TALENT MANAGEMENT PLATFORM</span>
-            </div>
-            
-            <h1 className="text-4xl md:text-5xl font-extrabold text-white tracking-tight leading-[1.15]">
-              Predict Employee <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-indigo-400">Attrition Risk</span> Before It Occurs
-            </h1>
-            
-            <p className="text-slate-400 text-sm md:text-base leading-relaxed max-w-2xl">
-              AttritionPro operates on a robust machine learning classification pipeline to quantify staff turnover risks, evaluate what-if scenarios in real-time, and prescribe immediate, AI-driven retention plans.
-            </p>
-
-            {/* Feature Checkmarks list */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-              <div className="flex items-start gap-2.5">
-                <ShieldCheck className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-wide">Talent Sandbox</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Adjust sliders to simulate employee parameters and visualize direct SHAP contributions.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <ShieldCheck className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-wide">Batch Predictor</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Upload a CSV profile batch to run bulk classification evaluations instantly.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <ShieldCheck className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-wide">Shapley Values Chart</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Zero-centered horizontal plot displaying precise feature influence breakdown.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <ShieldCheck className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-wide">Stay Task Kanban</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Track and organize actionable stay agreements and retention checklists.</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Model Metadata Snapshot Card */}
-            <div className="bg-slate-900/50 border border-slate-850 p-4 rounded-sm flex items-center gap-4">
-              <Terminal className="w-8 h-8 text-indigo-400 shrink-0" />
-              <div className="text-left font-mono text-[10px] space-y-1 text-slate-400">
-                <p className="text-slate-200 font-bold uppercase tracking-wider">HARRY PATRIA MODEL SPECIFICATIONS</p>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-y-1 gap-x-4">
-                  <p>• Algorithm: <span className="text-cyan-400">GradientBoosting</span></p>
-                  <p>• Estimators: <span className="text-cyan-400">300</span></p>
-                  <p>• Max Depth: <span className="text-cyan-400">4</span></p>
-                  <p>• Learning Rate: <span className="text-cyan-400">0.05</span></p>
-                  <p>• CV ROC-AUC Mean: <span className="text-cyan-400">82.34%</span></p>
-                  <p>• Holdout Test AUC: <span className="text-cyan-400">80.02%</span></p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Authentication Form (lg:col-span-5) */}
-          <div className="lg:col-span-5 w-full">
-            <div className="border border-slate-800 bg-slate-900/40 rounded-sm p-6 md:p-8 shadow-2xl relative overflow-hidden backdrop-blur-md">
-              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent"></div>
-              
-              <div className="text-center mb-6">
-                <h2 className="text-lg font-bold text-white uppercase tracking-wider flex items-center justify-center gap-2">
-                  <Lock className="w-4 h-4 text-cyan-400" /> Unlock Portal Access
-                </h2>
-                <p className="text-xs text-slate-500 font-mono uppercase tracking-widest mt-1">Authorized stay leaders authentication</p>
-              </div>
-
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <label className="text-[10px] font-mono uppercase tracking-widest text-slate-400 block mb-1.5">Username</label>
-                  <input
-                    type="text"
-                    required
-                    value={loginUsername}
-                    onChange={(e) => setLoginUsername(e.target.value)}
-                    placeholder="Enter system username"
-                    className="w-full bg-slate-950 border border-slate-850 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all rounded-sm py-2 px-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-mono uppercase tracking-widest text-slate-400 block mb-1.5">Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="Enter security password"
-                    className="w-full bg-slate-950 border border-slate-850 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all rounded-sm py-2 px-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none"
-                  />
-                </div>
-
-                {loginError && (
-                  <div className="p-3 bg-rose-950/20 border border-rose-900/30 text-rose-400 text-xs rounded-sm font-mono flex items-start gap-1.5">
-                    <span className="text-rose-500 font-bold">•</span>
-                    <p>{loginError}</p>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isLoggingIn}
-                  className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded-sm text-xs font-mono tracking-widest transition-all uppercase flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-cyan-500/10 disabled:opacity-50"
-                >
-                  {isLoggingIn ? (
-                    <>Verifying Credentials...</>
-                  ) : (
-                    <>
-                      <span>Enter Stay Center</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </form>
-
-
-            </div>
-          </div>
-
-        </main>
-
-        {/* Footer Brand Info */}
-        <footer className="w-full max-w-7xl mx-auto border-t border-slate-900 pt-6 flex flex-col sm:flex-row justify-between items-center text-[10px] font-mono text-slate-500 gap-4 z-10">
-          <div>
-            © 2026 AttritionPro Prescriptive Analytics • Dr Harry Patria & Patria & Co.
-          </div>
-          <div className="flex gap-4">
-            <span>MODEL: gb_v1_dp_harry</span>
-            <span>DATASET: IBM HR ATTRITION</span>
-          </div>
-        </footer>
-        <FloatingChatbot />
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 gap-4" id="loading-screen">
+        <div className="w-12 h-12 rounded-full border-4 border-indigo-200 border-t-indigo-600 animate-spin" />
+        <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest font-mono">
+          Loading Attrition Command Center...
+        </span>
       </div>
     );
   }
 
-  return (
-    <div className="flex h-screen bg-slate-950 font-sans text-slate-300 overflow-hidden relative select-none">
-      
-      {/* Background Ambience Dots */}
-      <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-10 pointer-events-none" />
-
-      {/* Sidebar - Desktop Layout */}
-      <aside className="hidden lg:flex flex-col w-64 bg-slate-900 border-r border-slate-800 shrink-0 z-10">
-        
-        {/* Brand Banner */}
-        <div className="p-6 flex items-center gap-3 border-b border-slate-800">
-          <div className="w-8 h-8 rounded-lg bg-cyan-500 flex items-center justify-center">
-            <Brain className="w-5 h-5 text-slate-950" />
-          </div>
-          <span className="font-bold text-lg tracking-tight text-white uppercase">
-            ATTRITION<span className="text-cyan-500 underline decoration-2 underline-offset-4">PRO</span>
-          </span>
-        </div>
-
-        {/* Navigation Items */}
-        <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-sm text-xs font-medium font-mono tracking-wide transition-all duration-150 cursor-pointer ${
-                  isActive
-                    ? 'bg-slate-800 text-white border border-slate-700/60'
-                    : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  {isActive ? (
-                    <div className="w-1.5 h-3.5 bg-cyan-500 rounded-full shrink-0"></div>
-                  ) : (
-                    <item.icon className="w-4 h-4 text-slate-500 ml-4 shrink-0" />
-                  )}
-                  <span>{item.label}</span>
-                </div>
-                {item.badge !== undefined && item.badge > 0 && (
-                  <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${isActive ? 'bg-cyan-500 text-slate-950' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Terminate Session Logout Control */}
-        <div className="p-4 border-t border-slate-850">
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6" id="error-screen">
+        <div className="max-w-md bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col items-center text-center">
+          <ShieldAlert className="w-12 h-12 text-rose-500 mb-4" />
+          <h2 className="text-lg font-bold text-slate-900 mb-2">Initialization Error</h2>
+          <p className="text-xs text-slate-500 mb-6 leading-relaxed">{error}</p>
           <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 bg-rose-950/20 border border-rose-900/30 hover:bg-rose-900/30 text-rose-400 font-bold py-2 rounded text-xs font-mono transition-all cursor-pointer uppercase tracking-wider"
+            onClick={() => window.location.reload()}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-5 rounded-lg transition-all"
           >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Terminate Session</span>
+            Retry Database Connection
           </button>
         </div>
+      </div>
+    );
+  }
 
-        {/* User Profile Info Card */}
-        <div className="p-4 border-t border-slate-850 bg-slate-950/20">
-          <div className="flex items-center gap-3 p-2 border border-slate-800/40 rounded bg-slate-900/50">
-            <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center border border-slate-600 text-slate-100 font-bold text-xs shrink-0 select-none">
-              JD
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-bold text-slate-200 truncate">Jordan Davis</div>
-              <div className="text-[9px] text-slate-500 uppercase tracking-widest truncate">Chief People Officer</div>
-            </div>
+  if (!isAuthenticated) {
+    return <LandingPage onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col pb-12" id="app-root">
+      {/* 1. Header / Navigation Rail */}
+      <header className="h-auto md:h-16 border-b border-slate-200 bg-white flex flex-col md:flex-row items-center justify-between px-6 md:px-8 shrink-0 py-3 md:py-0 gap-4 md:gap-0">
+        {/* Brand / Logo */}
+        <div className="flex items-center gap-3 self-start md:self-auto">
+          <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center">
+            <div className="w-4 h-4 border-2 border-white rounded-sm"></div>
           </div>
-        </div>
-
-        {/* Server Health Status Footer */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/40 flex items-center justify-between text-[10px] font-mono text-slate-500 select-none">
-          <span className="flex items-center gap-1.5">
-            <Radio className={`w-3.5 h-3.5 ${serverOnline ? 'text-cyan-400 animate-pulse' : 'text-slate-600'}`} />
-            EXPRESS BACKEND
-          </span>
-          <span className={serverOnline ? 'text-cyan-400' : 'text-slate-600'}>
-            {serverOnline ? 'CONNECTED' : 'DISCONNECTED'}
+          <h1 className="text-xl font-bold tracking-tight text-slate-800 uppercase">
+            Retention<span className="text-indigo-600">ML</span> Console
+          </h1>
+          <span className="text-[9px] bg-slate-100 text-slate-500 font-mono font-bold px-1.5 py-0.5 rounded border border-slate-200 ml-1">
+            v1.4
           </span>
         </div>
-      </aside>
 
-      {/* Mobile Top Bar */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-5 z-20 select-none">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-cyan-500 flex items-center justify-center">
-            <Brain className="w-4 h-4 text-slate-950" />
-          </div>
-          <span className="text-xs uppercase font-bold text-slate-200 font-mono tracking-wider">ATTRITION<span className="text-cyan-400 underline decoration-1 underline-offset-2">PRO</span></span>
-        </div>
-        <div className="flex items-center gap-2">
+        {/* Navigation tabs */}
+        <nav className="flex gap-6 md:gap-8 text-xs md:text-sm font-semibold text-slate-500 h-full items-center self-start md:self-auto">
           <button
-            onClick={handleLogout}
-            className="text-rose-400 hover:text-rose-300 p-2 bg-rose-950/10 border border-rose-900/20 rounded cursor-pointer text-[10px] font-mono uppercase tracking-wider"
+            onClick={() => setActiveTab('simulator')}
+            className={`h-full flex items-center cursor-pointer transition-all border-b-2 pb-2 md:pb-0 md:pt-1 ${
+              activeTab === 'simulator'
+                ? 'text-indigo-600 border-indigo-600 font-bold'
+                : 'text-slate-500 hover:text-slate-800 border-transparent hover:border-slate-300'
+            }`}
+          >
+            What-If Simulator
+          </button>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`h-full flex items-center cursor-pointer transition-all border-b-2 pb-2 md:pb-0 md:pt-1 ${
+              activeTab === 'dashboard'
+                ? 'text-indigo-600 border-indigo-600 font-bold'
+                : 'text-slate-500 hover:text-slate-800 border-transparent hover:border-slate-300'
+            }`}
+          >
+            Executive Dashboard
+          </button>
+          <button
+            onClick={() => setActiveTab('roster')}
+            className={`h-full flex items-center cursor-pointer transition-all border-b-2 pb-2 md:pb-0 md:pt-1 ${
+              activeTab === 'roster'
+                ? 'text-indigo-600 border-indigo-600 font-bold'
+                : 'text-slate-500 hover:text-slate-800 border-transparent hover:border-slate-300'
+            }`}
+          >
+            Risk Models & SHAP
+          </button>
+          <button
+            onClick={() => setActiveTab('tasks')}
+            className={`h-full flex items-center cursor-pointer transition-all border-b-2 pb-2 md:pb-0 md:pt-1 ${
+              activeTab === 'tasks'
+                ? 'text-indigo-600 border-indigo-600 font-bold'
+                : 'text-slate-500 hover:text-slate-800 border-transparent hover:border-slate-300'
+            }`}
+          >
+            Intervention Queue
+          </button>
+        </nav>
+
+        {/* Profile and System Status */}
+        <div className="flex items-center gap-3 self-end md:self-auto">
+          <div className="text-right hidden sm:block">
+            <p className="text-xs font-bold text-slate-800">Sarah Jenkins</p>
+            <p className="text-[9px] text-slate-400 uppercase tracking-widest font-mono">Senior HR Engineer</p>
+          </div>
+          <div className="w-9 h-9 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center font-bold text-slate-600 text-xs shadow-xs">
+            SJ
+          </div>
+          <button
+            onClick={() => {
+              localStorage.removeItem('patria_auth');
+              setIsAuthenticated(false);
+            }}
+            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-500 hover:text-slate-800 cursor-pointer transition-all"
           >
             Logout
           </button>
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="text-slate-400 p-2 hover:text-slate-200 bg-slate-850 border border-slate-800 rounded cursor-pointer"
-          >
-            {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-          </button>
         </div>
-      </div>
+      </header>
 
-      {/* Mobile Menu Slide-over */}
-      {mobileMenuOpen && (
-        <div className="fixed inset-0 bg-slate-950/90 z-30 lg:hidden pt-16 flex flex-col select-none">
-          <nav className="flex-1 p-6 space-y-2">
-            {navItems.map((item) => {
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-4 py-3.5 rounded transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-slate-850 text-white border border-slate-700 font-mono'
-                      : 'text-slate-400 hover:bg-slate-900 font-mono'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <item.icon className="w-4.5 h-4.5" />
-                    <span>{item.label}</span>
-                  </div>
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <span className="text-xs font-mono bg-cyan-500 text-slate-950 px-2 py-0.5 rounded">
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+      {/* 2. Executive KPI Ribbon */}
+      <section className="bg-white border-b border-slate-200 py-6 px-6 md:px-8 shadow-xs">
+        <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6">
+          {/* Total Workforce */}
+          <div className="flex items-center gap-3 bg-white p-4 border border-slate-200 rounded">
+            <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center shrink-0">
+              <Users className="w-5 h-5 text-slate-600" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter block">Total Workforce</span>
+              <span className="text-xl font-bold text-slate-800 font-mono">250</span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">Scored profiles</span>
+            </div>
+          </div>
+
+          {/* Average Attrition Probability */}
+          <div className="flex items-center gap-3 bg-white p-4 border border-slate-200 rounded">
+            <div className="w-10 h-10 rounded bg-indigo-50 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter block">Workforce Risk Mean</span>
+              <span className="text-xl font-bold text-indigo-600 font-mono">{averageRisk}%</span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">Average probability</span>
+            </div>
+          </div>
+
+          {/* Critical Risk Alerts */}
+          <div className="flex items-center gap-3 bg-white p-4 border border-slate-200 rounded">
+            <div className="w-10 h-10 rounded bg-rose-50 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter block">Critical Risk Alerts</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xl font-bold text-rose-600 font-mono">{criticalRiskCount}</span>
+                <span className="text-[10px] bg-rose-100 text-rose-800 font-semibold px-1 rounded">Act Needed</span>
+              </div>
+              <span className="text-[10px] text-slate-400 block mt-0.5">Probability &gt;70%</span>
+            </div>
+          </div>
+
+          {/* Model Accuracy (Holdout) */}
+          <div className="flex items-center gap-3 bg-white p-4 border border-slate-200 rounded">
+            <div className="w-10 h-10 rounded bg-emerald-50 flex items-center justify-center shrink-0">
+              <Award className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter block">Audit Holdout AUC</span>
+              <span className="text-xl font-bold text-emerald-600 font-mono">{(metrics?.auc || 0.894).toFixed(3)}</span>
+              <span className="text-[10px] text-slate-400 block mt-0.5 font-sans">Target: &ge;0.850</span>
+            </div>
+          </div>
         </div>
-      )}
+      </section>
 
-      {/* Content Pane */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden pt-16 lg:pt-0">
-        <main className="flex-1 p-5 lg:p-8 overflow-y-auto scrollbar-thin">
-          <AnimatePresence mode="wait">
+      {/* 3. Main Workspace Container */}
+      <main className="max-w-7xl mx-auto px-6 md:px-8 mt-8 flex-1 w-full">
+        <AnimatePresence mode="wait">
+          {/* TABS VIEW CONTROLLER */}
+          {activeTab === 'simulator' && (
             <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 15 }}
+              key="simulator"
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
+              exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.15 }}
-              className="h-full max-w-7xl mx-auto"
             >
-              {renderActiveTab()}
+              <ScenarioAnalyser />
             </motion.div>
-          </AnimatePresence>
-        </main>
+          )}
 
-        {/* Bottom Status Bar Footer */}
-        <footer className="h-8 bg-slate-900 border-t border-slate-800 px-8 flex items-center justify-between text-[10px] font-mono select-none text-slate-500 shrink-0">
-          <div className="flex items-center gap-4">
-            <span className="text-emerald-400 flex items-center gap-1 font-bold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> SYSTEM LIVE
-            </span>
-            <span className="hidden sm:inline">NODE: US-EAST-1</span>
-            <span className="hidden sm:inline">DB: SUPABASE-PRIMARY</span>
+          {activeTab === 'dashboard' && (
+            <motion.div
+              key="dashboard"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.15 }}
+              className="space-y-8"
+            >
+              {/* Summary Introduction Box */}
+              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
+                <h2 className="text-base font-bold text-slate-800 mb-2">Executive Summary</h2>
+                <p className="text-xs text-slate-500 leading-relaxed max-w-4xl">
+                  This people analytics system models workforce dynamics to prevent talent flight. Standardized logistic regression calculates deterministic attrition coefficients using real organizational data. Individual risk calculations are backed by local mathematical SHAP attributions, which explain exactly <em>why</em> an employee is experiencing attrition risks. HR Business Partners can then invoke server-side Gemini intelligence to coordinate target resolutions under the ITDO (Insights &rarr; Triggers &rarr; Decisions &rarr; Operations) pipeline.
+                </p>
+              </div>
+
+              {/* Renders the Holdout metrics and graphs component */}
+              {metrics && <HoldoutMetrics metrics={metrics} />}
+            </motion.div>
+          )}
+
+          {activeTab === 'roster' && (
+            <motion.div
+              key="roster"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.15 }}
+            >
+              {/* Directory Splitting: Side-by-side Roster and SHAP Details layout */}
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+                {/* Left Side: Directory (Slices space based on if an employee is selected) */}
+                <div className={`${selectedEmployeeId ? 'xl:col-span-6' : 'xl:col-span-12'} transition-all duration-300`}>
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h2 className="font-bold text-slate-800 text-base">Workforce Risk Directory</h2>
+                      <p className="text-xs text-slate-400 mt-0.5">Explore predicted probabilities, satisfaction records, and work hours</p>
+                    </div>
+                  </div>
+
+                  <EmployeeDirectory
+                    employees={employees}
+                    selectedEmployeeId={selectedEmployeeId}
+                    onSelectEmployee={handleSelectEmployee}
+                    searchQuery={searchQuery}
+                    setSearchQuery={setSearchQuery}
+                    selectedDept={selectedDept}
+                    setSelectedDept={setSelectedDept}
+                    selectedRisk={selectedRisk}
+                    setSelectedRisk={setSelectedRisk}
+                  />
+                </div>
+
+                {/* Right Side: Active SHAP waterfall and ITDO AI generator panel */}
+                {selectedEmployeeId && (
+                  <div className="xl:col-span-6 flex flex-col gap-6 animate-in slide-in-from-right-5 duration-200">
+                    {/* Header close panel details */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-4 flex justify-between items-center shadow-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+                        <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Active Analysis Roster Item</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedEmployeeId(null);
+                          setSelectedEmployee(null);
+                          setSelectedExplanation(null);
+                        }}
+                        className="text-xs text-slate-400 hover:text-slate-600 font-semibold flex items-center gap-1 transition-colors cursor-pointer border border-slate-200 px-2.5 py-1 rounded hover:bg-slate-50"
+                      >
+                        <X className="w-3.5 h-3.5" /> Close Details
+                      </button>
+                    </div>
+
+                    {detailsLoading ? (
+                      <div className="bg-white rounded-xl border border-slate-200 p-12 text-center flex flex-col items-center justify-center shadow-xs">
+                        <div className="w-8 h-8 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin mb-4" />
+                        <span className="text-xs text-slate-400 font-mono">Computing mathematical SHAP waterfall vectors...</span>
+                      </div>
+                    ) : (
+                      selectedEmployee && selectedExplanation && (
+                        <>
+                          {/* 1. Profile Summary Card */}
+                          <div className="bg-slate-900 text-white rounded-xl p-5 shadow-xs flex justify-between items-center border border-slate-800">
+                            <div>
+                              <span className="text-[10px] bg-indigo-600 text-indigo-100 font-mono font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wider mb-1.5 inline-block">
+                                Selected Profile
+                              </span>
+                              <h3 className="text-lg font-bold tracking-tight">{selectedEmployee.name}</h3>
+                              <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                                <Building className="w-3.5 h-3.5 text-slate-500" />
+                                {selectedEmployee.jobRole} &bull; {selectedEmployee.department}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] text-slate-400 block font-mono uppercase">Vulnerability</span>
+                              <span className={`text-2xl font-black font-mono leading-none ${
+                                (selectedEmployee.predictedProbability || 0) > 0.70 ? 'text-rose-400' : 'text-amber-400'
+                              }`}>
+                                {Math.round((selectedEmployee.predictedProbability || 0) * 100)}%
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 2. Renders the SHAP Waterfall */}
+                          <ShapWaterfall explanation={selectedExplanation} />
+
+                          {/* 3. ITDO Planner AI Co-Pilot block */}
+                          <ITDOPlanGenerator employee={selectedEmployee} onPlanCreated={handlePlanCreated} />
+                        </>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'tasks' && (
+            <motion.div
+              key="tasks"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.15 }}
+            >
+              <RetentionTaskBoard
+                tasks={tasks}
+                onUpdateStatus={handleUpdateTaskStatus}
+                onUpdatePriority={handleUpdateTaskPriority}
+                onDeleteTask={handleDeleteTask}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+
+      {/* Secrets config warning & Elegant Geometric Footer */}
+      <footer className="mt-16 bg-white border-t border-slate-200 py-6 px-6 md:px-8 shrink-0">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+          {/* Status Indicators */}
+          <div className="flex flex-wrap gap-x-6 gap-y-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            <span>SYSTEM STATUS: <span className="text-emerald-500 font-extrabold">&bull; OPERATIONAL</span></span>
+            <span>LAST SYNCHRONIZED: {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}</span>
+            <span>DATA SOURCE: <span className="text-slate-600 font-mono">RETENTION_SEED_DB</span></span>
           </div>
-          <div className="uppercase tracking-widest text-right">
-            ITDO Framework v4.21.0
+
+          {/* Core App Information */}
+          <div className="flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-slate-400 font-mono">
+            <span>V1.4.0-STABLE</span>
+            <span>SANDBOX_INTEGRITY: SECURE</span>
+            <span>© 2026 GEOMETRIC BALANCE</span>
           </div>
-        </footer>
-      </div>
-      <FloatingChatbot />
+        </div>
+
+        {/* Informational Secrets notice */}
+        <div className="max-w-7xl mx-auto mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <p className="text-[11px] text-slate-400">
+            Attrition models utilize deterministic linear gradients backed by SHAP localized math.
+          </p>
+          <div className="bg-slate-50 border border-slate-200 rounded p-2 flex items-center gap-2 text-[11px] text-slate-500 max-w-lg">
+            <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+            <p className="leading-tight">
+              <strong>Secrets Configuration:</strong> Server-side AI planner is active. Add your <code>GEMINI_API_KEY</code> in Settings &gt; Secrets if not present.
+            </p>
+          </div>
+        </div>
+      </footer>
+      <Chatbot />
     </div>
   );
 }

@@ -1,116 +1,93 @@
 /**
- * Attrition Predictor Pro Types
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
  */
 
-export interface EmployeeFeatures {
-  Age: number;
-  BusinessTravel: 'Travel_Rarely' | 'Travel_Frequently' | 'Non-Travel';
-  DailyRate: number;
-  Department: 'Sales' | 'Research & Development' | 'Human Resources';
-  DistanceFromHome: number;
-  Education: number;
-  EducationField: string;
-  EnvironmentSatisfaction: number; // 1-4
-  Gender: 'Male' | 'Female';
-  HourlyRate: number;
-  JobInvolvement: number; // 1-4
-  JobLevel: number; // 1-5
-  JobRole: string;
-  JobSatisfaction: number; // 1-4
-  MaritalStatus: 'Single' | 'Married' | 'Divorced';
-  MonthlyIncome: number;
-  MonthlyRate: number;
-  NumCompaniesWorked: number;
-  OverTime: 'Yes' | 'No';
-  PercentSalaryHike: number;
-  PerformanceRating: number; // 1-4
-  RelationshipSatisfaction: number; // 1-4
-  StockOptionLevel: number; // 0-3
-  TotalWorkingYears: number;
-  TrainingTimesLastYear: number;
-  WorkLifeBalance: number; // 1-4
-  YearsAtCompany: number;
-  YearsInCurrentRole: number;
-  YearsSinceLastPromotion: number;
-  YearsWithCurrManager: number;
-}
-
-export interface Employee extends EmployeeFeatures {
+export interface Employee {
   id: string;
-  employee_ref: string;
-  department: 'Sales' | 'Research & Development' | 'Human Resources';
-  job_role: string;
-  manager_id?: string;
-  created_at: string;
+  name: string;
+  email: string;
+  department: 'Engineering' | 'Sales' | 'HR' | 'Marketing' | 'Product' | 'Operations';
+  jobRole: string;
+  age: number;
+  gender: string;
+  monthlyIncome: number;
+  overTime: number; // 1 for Yes, 0 for No
+  jobSatisfaction: number; // 1 to 4
+  workLifeBalance: number; // 1 to 4
+  environmentSatisfaction: number; // 1 to 4
+  yearsAtCompany: number;
+  yearsSinceLastPromotion: number;
+  stockOptionLevel: number; // 0 to 3
+  performanceRating: number; // 1 to 4
+  actualAttrition: number; // 1 for left, 0 for stayed (historical or holdout)
+  predictedProbability?: number; // 0.0 to 1.0
+  predictedAttrition?: boolean;
 }
 
-export interface RiskFactor {
+export interface FeatureImportance {
   feature: string;
-  impact: number; // SHAP value (contribution)
-  direction: 'increases' | 'decreases';
   displayName: string;
+  weight: number;
+  importance: number; // absolute weight or normalized
 }
 
-export interface PredictionResult {
-  employee_id: string;
-  employee_name: string;
-  attrition_probability: number; // 0.0 - 1.0
-  risk_level: 'LOW' | 'MEDIUM' | 'HIGH';
-  top_risk_factors: RiskFactor[];
-  suggested_interventions: string[];
-  prediction_id: string;
-  model_version: string;
-  created_at: string;
-}
-
-export interface Alert {
-  id: string;
-  prediction_id: string;
-  employee_id: string;
-  employee_name: string;
-  department: string;
-  job_role: string;
+export interface RocPoint {
+  fpr: number;
+  tpr: number;
   threshold: number;
-  attrition_probability: number;
-  status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';
-  assigned_to?: string; // User/Admin email
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Task {
-  id: string;
-  alert_id?: string;
-  employee_id: string;
-  employee_name: string;
-  title: string;
-  description: string;
-  intervention: string;
-  status: 'TODO' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED';
-  due_date: string; // YYYY-MM-DD
-  assigned_to?: string; // Email
-  created_at: string;
-  updated_at: string;
 }
 
 export interface ModelMetrics {
-  auc_roc: number;
-  f1_score: number;
+  auc: number;
+  accuracy: number;
   precision: number;
   recall: number;
-  accuracy: number;
-  trained_at: string;
-  features_importance: { feature: string; importance: number }[];
-  confusion_matrix: {
-    true_positive: number;
-    false_positive: number;
-    true_negative: number;
-    false_negative: number;
+  f1: number;
+  rocCurve: RocPoint[];
+  featureImportances: FeatureImportance[];
+  confusionMatrix: {
+    tp: number;
+    fp: number;
+    fn: number;
+    tn: number;
   };
 }
 
-export interface SystemSettings {
-  alert_threshold: number; // e.g. 0.70
-  system_prompt: string;
-  model_version: string;
+export interface ShapValue {
+  feature: string;
+  displayName: string;
+  value: number; // feature value
+  shapValue: number; // impact on log-odds or risk probability
+  effect: 'increase' | 'decrease';
+  description: string;
+}
+
+export interface ShapExplanation {
+  employeeId: string;
+  employeeName: string;
+  baseProbability: number;
+  finalProbability: number;
+  shapValues: ShapValue[];
+  narrative: string;
+}
+
+export interface RetentionTask {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  jobRole: string;
+  riskScore: number;
+  title: string;
+  status: 'Open' | 'InProgress' | 'Resolved';
+  priority: 'High' | 'Medium' | 'Low';
+  createdAt: string;
+  assignedTo: string;
+  itdoPipeline: {
+    insight: string;
+    trigger: string;
+    decision: string;
+    operation: string;
+  };
 }

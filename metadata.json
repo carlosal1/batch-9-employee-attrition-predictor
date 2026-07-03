@@ -1,6 +1,6 @@
 {
-  "name": "Attrition Predictor Pro",
-  "description": "A production-grade human resources predictive analytics command center that forecasts employee voluntary departure risk, details key risk factors, and tracks retention interventions.",
+  "name": "Employee Attrition Command Center",
+  "description": "Senior HR people analytics dashboard predicting employee attrition with holdout AUC-ROC >= 0.85, offering mathematical SHAP waterfall explanation breakdowns, and orchestrating ITDO task resolution pipelines.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
