@@ -636,7 +636,6 @@ export class GradientBoostingModel {
 
       const parsed = JSON.parse(stdoutTrimmed);
       if (parsed.status === 'success') {
-        console.log(`[Model Loader] Successfully predicted using model.pkl! Attrition probability: ${parsed.attrition_probability}`);
         return parsed.attrition_probability;
       } else {
         console.error('[Model Loader] Python inference script error:', parsed.error);
