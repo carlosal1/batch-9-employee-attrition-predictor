@@ -648,6 +648,49 @@ export class GradientBoostingModel {
   }
 
   /**
+   * Run Python-based pickle prediction in batch for list of employees
+   */
+  predictBatchWithPython(employeesList: any[]): any[] | null {
+    try {
+      const pythonPath = 'python3';
+      const scriptPath = path.join(process.cwd(), 'src', 'inference.py');
+      
+      const result = spawnSync(pythonPath, [scriptPath], {
+        input: JSON.stringify(employeesList),
+        encoding: 'utf-8',
+        maxBuffer: 50 * 1024 * 1024 // 50MB buffer
+      });
+      
+      if (result.error) {
+        console.error('[Model Loader] Python spawnSync batch error:', result.error);
+        return null;
+      }
+      
+      if (result.status !== 0) {
+        console.error('[Model Loader] Python batch inference failed. Status:', result.status, 'Stderr:', result.stderr);
+        return null;
+      }
+      
+      const stdoutTrimmed = result.stdout.trim();
+      if (!stdoutTrimmed) {
+        console.error('[Model Loader] Python batch inference returned empty stdout.');
+        return null;
+      }
+
+      const parsed = JSON.parse(stdoutTrimmed);
+      if (parsed.status === 'success' && Array.isArray(parsed.results)) {
+        return parsed.results;
+      } else {
+        console.error('[Model Loader] Python batch inference script error:', parsed.error);
+        return null;
+      }
+    } catch (e) {
+      console.error('[Model Loader] Exception in predictBatchWithPython:', e);
+      return null;
+    }
+  }
+
+  /**
    * Predict probability using the 30 features and Gradient Boosting decision-tree log-odds contributions
    */
   predictProbability(employee: any): number {

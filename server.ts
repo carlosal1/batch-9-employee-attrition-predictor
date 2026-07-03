@@ -41,13 +41,34 @@ if (fs.existsSync(pklPath)) {
   gbModel = new GradientBoostingModel();
   console.log('[Model Loader] GradientBoostingModel instantiated successfully for live mathematical pipeline predictions.');
   
-  // Re-score employees list using gbModel
-  employees.forEach(emp => {
-    const prob = gbModel!.predictProbability(emp);
-    emp.predictedProbability = parseFloat(prob.toFixed(4));
-    emp.predictedAttrition = prob > 0.5;
-  });
-  console.log(`[Model Loader] Re-scored ${employees.length} employees using Gradient Boosting model.`);
+  // Re-score employees list using gbModel in a single batch call
+  const batchResults = gbModel.predictBatchWithPython(employees);
+  if (batchResults && Array.isArray(batchResults)) {
+    const resultMap = new Map<string, number>();
+    batchResults.forEach(res => {
+      if (res && res.employee_id !== undefined && res.attrition_probability !== undefined) {
+        resultMap.set(String(res.employee_id), res.attrition_probability);
+      }
+    });
+
+    employees.forEach(emp => {
+      let prob = resultMap.get(emp.id);
+      if (prob === undefined) {
+        prob = gbModel!.predictProbability(emp);
+      }
+      emp.predictedProbability = parseFloat(prob.toFixed(4));
+      emp.predictedAttrition = prob > 0.5;
+    });
+    console.log(`[Model Loader] Re-scored ${employees.length} employees in a single batch call.`);
+  } else {
+    console.warn('[Model Loader] Batch prediction failed. Falling back to individual predictions.');
+    employees.forEach(emp => {
+      const prob = gbModel!.predictProbability(emp);
+      emp.predictedProbability = parseFloat(prob.toFixed(4));
+      emp.predictedAttrition = prob > 0.5;
+    });
+    console.log(`[Model Loader] Re-scored ${employees.length} employees using fallback individual predictions.`);
+  }
 }
 
 // In-memory task list seeded with initial high-risk retention actions
