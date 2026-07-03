@@ -1,7 +1,7 @@
 import sys
 import json
 import os
-import pickle
+import joblib
 
 def main():
     try:
@@ -21,11 +21,8 @@ def main():
             print(json.dumps({"error": "Model files not found on disk.", "status": "failed"}))
             return
 
-        with open(prep_path, 'rb') as f:
-            preprocessor = pickle.load(f)
-            
-        with open(model_path, 'rb') as f:
-            model = pickle.load(f)
+        preprocessor = joblib.load(prep_path)
+        model = joblib.load(model_path)
 
         # Normalize Department to match original IBM values
         dept = input_data.get('department', 'Sales')
